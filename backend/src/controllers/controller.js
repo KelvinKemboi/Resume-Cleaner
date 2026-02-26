@@ -1,43 +1,58 @@
-import fs from "fs";
-import path from "path";
-import multer from "multer";
+import fs from "fs"; //creating/ working with directories
+import path from "path"; //working with path directories
+import multer from "multer"; //handling file-uploads
 import mammoth from "mammoth";
-import OpenAI from "openai";
+import OpenAI from "openai"; //AI-API doing the cleaning
 import PDFDocument from "pdfkit";
-import { createRequire } from "module";
+import sql from "../config/db.js" //my created database
+import pdfParseModule from "pdf-parse";
 
-const require = createRequire(import.meta.url);
-const pdfParse = require("pdf-parse");
+// import { createRequire } from "module";
+// const require = createRequire(import.meta.url);
 
-const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-
-// In-memory DB
-let resumesDB = [];
-let idCounter = 1;
+const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY }); //OpenAI api instantiation
 
 // Folders
-const UPLOADS_FOLDER = path.join(process.cwd(), "uploads");
-const CLEANED_FOLDER = path.join(process.cwd(), "cleaned");
-if (!fs.existsSync(UPLOADS_FOLDER)) fs.mkdirSync(UPLOADS_FOLDER, { recursive: true });
-if (!fs.existsSync(CLEANED_FOLDER)) fs.mkdirSync(CLEANED_FOLDER, { recursive: true });
+const UPLOADS_FOLDER = path.join(process.cwd(), "uploads"); //variable for uploaded resumes folder
+const CLEANED_FOLDER = path.join(process.cwd(), "cleaned"); //variable for cleaned resumes folder
+if (!fs.existsSync(UPLOADS_FOLDER)) fs.mkdirSync(UPLOADS_FOLDER, { recursive: true }); //create the folder if it does not exist in local dir
+if (!fs.existsSync(CLEANED_FOLDER)) fs.mkdirSync(CLEANED_FOLDER, { recursive: true }); //create the folder if it does not exist in local dir
 
 // Multer setup
 export const upload = multer({
   storage: multer.diskStorage({
-    destination: (req, file, cb) => cb(null, UPLOADS_FOLDER),
-    filename: (req, file, cb) => cb(null, Date.now() + "-" + file.originalname),
+    destination: (req, res, cb) =>{
+      cb(null, "/uploads"); 
+    },
+    filename: (req, file, cb) => {
+      const uniqueName = Date.now() + '-' + file.originalname.replace(/[^a-zA-Z0-9.-]/g, '_'); // make an acceptable file name
+      cb(null, uniqueName); //accept file name
+    },
   }),
+  limits: {fileSize: 10*1024*1024},
+  fileFilter: (req, file, cb) => { //only for pdfs, word docx/doc and images
+    if (file.mimetype.startsWith("image/") || file.mimetype === "application/pdf" || file.mimetype==="application/doc" || file.mimetype==="application/docx") cb(null, true);
+    else cb(new Error("Only images or PDFs allowed!"));
+  },
 });
 
-// Helper to parse PDF
+// Helper to analyse/parse PDF uploaded in uploads folder
 async function parsePDF(filePath) {
-  const buffer = fs.readFileSync(filePath);
-  const pdfData = await pdfParseModule(buffer);
-  return pdfData.text || "";
+  try{
+    const buffer = await fs.promises.readFile(filePath); //read the specific file
+    const pdfData = await pdfParseModule(buffer);
+    return pdfData.text || "";
+  }catch(err){
+    console.log(err);
+    res.status(400).json({message:"Error parsing pdf!"})
+  }
+
 }
 
-// AI Cleaner
+// AI Cleaner- receives prompt and cleans resume
 async function aiCleanResume(text) {
+  try{
+      //user prompt
   const prompt = `
 Clean the following resume into a professional, ATS-optimized format.
 Improve clarity, formatting, bullet points, and structure.
@@ -50,13 +65,17 @@ ${text}
   const completion = await client.chat.completions.create({
     model: "gpt-4.1-mini",
     messages: [
-      { role: "system", content: "You are an expert resume writer." },
-      { role: "user", content: prompt },
+      { role: "system", content: "You are an expert resume writer." }, //cleaner prompt
+      { role: "user", content: prompt }, //user prompt
     ],
-    temperature: 0.3,
-  });
-
+    temperature: 0.5, //not too creative nor bland
+  })
   return completion.choices[0].message.content;
+  }catch(err){
+    console.log(err);
+    res.status(400).json({message: "AI service temporarily unavailable"});
+  }
+
 }
 
 // Export to PDF
@@ -69,23 +88,32 @@ function exportToPDF(text, filename) {
   return pdfPath;
 }
 
-// GET all resumes
+// GET all resumes by user id
 export const getResumesByUser = async (req, res) => {
   try {
-    res.status(200).json(resumesDB);
+    const {user_id}=req.params;
+    if (!user_id || isNaN(user_id)) return res.status(404).json({ message: "Invalid UserID" });
+    const all_resumes=await sql`
+    SELECT * FROM resumes WHERE auth_user_id=${user_id} ORDER BY uploaded_at DESC
+    `
+
+    res.status(200).json(all_resumes);
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: "Internal server error" });
   }
 };
 
-// GET single resume
+// GET single resume by resume id
 export const getResumeById = async (req, res) => {
   try {
     const id = parseInt(req.params.id);
-    const resume = resumesDB.find((r) => r.id === id);
-    if (!resume) return res.status(404).json({ message: "Resume not found" });
-    res.status(200).json(resume);
+    if (!id) return res.status(404).json({ message: "Invalid ID" });
+    const resume = await sql`
+    SELECT * FROM resumes WHERE id=${id}
+    `
+    if (!resume || resume.length==0) return res.status(404).json({ message: "Resume not found" });
+    res.status(200).json(resume[0]);
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: "Internal server error" });
@@ -95,25 +123,33 @@ export const getResumeById = async (req, res) => {
 // POST upload resume
 export const uploadResume = async (req, res) => {
   try {
+    const {user_id, description}=req.body;
     const file = req.file;
-    if (!file) return res.status(400).json({ message: "No file uploaded" });
+    if (!file) return res.status(400).json({ message: "No file uploaded" }); // if no file is uploaded
+    if(!user_id) return res.status(400).json({message: "UserID missing"}); //missing user id
+    if(isNaN(user_id)) return res.status(400).json({message: "Invalid User Id"}); //non-integer user id
 
-    const resume = {
-      id: idCounter++,
-      original_filename: file.originalname,
-      filename: file.filename,
-      status: "uploaded",
-      uploaded_at: new Date().toISOString(),
-      raw_text: null,
-      cleaned_text: null,
-      cleaned_pdf: null,
-    };
-
-    resumesDB.push(resume);
-    res.status(201).json(resume);
+    const resume= await sql`
+    INSERT INTO resumes(auth_user_id, file.originalname, job_description, status)
+    VALUES (${user_id}, ${file}, ${description}, 'uploaded')
+    RETURNING *
+    `
+    // const resume = {
+    //   id: idCounter++,
+    //   original_filename: file.originalname,
+    //   filename: file.filename,
+    //   status: "uploaded",
+    //   uploaded_at: new Date().toISOString(),
+    //   raw_text: null,
+    //   cleaned_text: null,
+    //   cleaned_pdf: null,
+    // };
+    if(!resume) return res.status(400).json({message: "Resume not uploaded. Record not created"})
+    console.log(resume);
+    res.status(201).json(resume[0]);
   } catch (err) {
     console.error(err);
-    res.status(500).json({ message: "Internal server error" });
+    res.status(500).json({ message: "Error Uploading file" });
   }
 };
 
@@ -121,7 +157,9 @@ export const uploadResume = async (req, res) => {
 export const cleanResume = async (req, res) => {
   try {
     const id = parseInt(req.params.id);
-    const resume = resumesDB.find((r) => r.id === id);
+    const resume = await sql`
+    SELECT * FROM resumes WHERE id=${id}
+    `
     if (!resume) return res.status(404).json({ message: "Resume not found" });
 
     const filePath = path.join(UPLOADS_FOLDER, resume.filename);
