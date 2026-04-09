@@ -1,5 +1,6 @@
 import { neon } from "@neondatabase/serverless";
 import dotenv from "dotenv";
+import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 
@@ -8,10 +9,21 @@ const __dirname = path.dirname(__filename);
 
 dotenv.config({ path: path.resolve(__dirname, "../../.env") });
 
-const sql = neon(process.env.DATABASE_URL);
+const databaseUrl = process.env.DATABASE_URL?.trim().replace(/^['"]|['"]$/g, "");
+const sql = databaseUrl ? neon(databaseUrl) : null;
+let databaseAvailable = false;
 export default sql;
+export function isDatabaseAvailable() {
+  return databaseAvailable;
+}
 
 export async function initDB() {
+  if (!sql) {
+    console.warn("DATABASE_URL is missing. Falling back to local file storage.");
+    databaseAvailable = false;
+    return;
+  }
+
   try {
     await sql`
       CREATE TABLE IF NOT EXISTS resumes (
@@ -30,6 +42,14 @@ export async function initDB() {
     `;
 
     // Keep older databases in sync with the fields the current app uses.
+    await sql`
+      ALTER TABLE resumes
+      ADD COLUMN IF NOT EXISTS auth_user_id VARCHAR(255)
+    `;
+    await sql`
+      ALTER TABLE resumes
+      ADD COLUMN IF NOT EXISTS original_filename VARCHAR(255)
+    `;
     await sql`
       ALTER TABLE resumes
       ADD COLUMN IF NOT EXISTS stored_filename VARCHAR(255)
@@ -54,8 +74,26 @@ export async function initDB() {
       ALTER TABLE resumes
       ADD COLUMN IF NOT EXISTS status VARCHAR(50) DEFAULT 'pending'
     `;
+    await sql`
+      ALTER TABLE resumes
+      ADD COLUMN IF NOT EXISTS uploaded_at TIMESTAMP DEFAULT now()
+    `;
+
+    await sql`
+      UPDATE resumes
+      SET auth_user_id = 'demo-user'
+      WHERE auth_user_id IS NULL
+    `;
+
+    await sql`
+      ALTER TABLE resumes
+      ALTER COLUMN auth_user_id SET NOT NULL
+    `;
+
+    databaseAvailable = true;
   } catch (error) {
     console.error("Error initialising database:", error);
-    throw error;
+    console.warn("Falling back to local file storage.");
+    databaseAvailable = false;
   }
 }

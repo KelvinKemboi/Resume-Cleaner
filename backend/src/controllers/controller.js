@@ -4,10 +4,17 @@ import multer from "multer"; //handling file-uploads
 import mammoth from "mammoth";
 import OpenAI from "openai"; //AI-API doing the cleaning
 import PDFDocument from "pdfkit";
-import sql from "../config/db.js"; // database
 import { PDFParse } from "pdf-parse";
+import {
+  createResumeRecord,
+  deleteResumeRecord,
+  getResume,
+  listResumes,
+  updateResumeRecord,
+} from "../config/resumeStore.js";
 
-const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY }); //OpenAI api instantiation
+const openAiApiKey = process.env.OPENAI_API_KEY?.trim();
+const client = openAiApiKey ? new OpenAI({ apiKey: openAiApiKey }) : null; //OpenAI api instantiation
 
 // Folders
 const UPLOADS_FOLDER = path.join(process.cwd(), "uploads"); //variable for uploaded resumes folder
@@ -55,6 +62,10 @@ async function parsePDF(filePath) {
 
 // AI Cleaner- receives prompt and cleans resume
 async function aiCleanResume(text) {
+  if (!client || !openAiApiKey) {
+    throw new Error("OPENAI_API_KEY is missing or invalid in backend/.env");
+  }
+
   try {
     //user prompt
     const prompt = `
@@ -96,17 +107,7 @@ function exportToPDF(text, filename) {
 export const getResumesByUser = async (req, res) => {
   try {
     const { user_id } = req.query;
-    let all_resumes;
-
-    if (user_id) {
-      all_resumes = await sql`
-        SELECT * FROM resumes WHERE auth_user_id = ${String(user_id)} ORDER BY uploaded_at DESC
-      `;
-    } else {
-      all_resumes = await sql`
-        SELECT * FROM resumes ORDER BY uploaded_at DESC
-      `;
-    }
+    const all_resumes = await listResumes(user_id);
     res.status(200).json(all_resumes);
   } catch (err) {
     console.error(err);
@@ -119,11 +120,9 @@ export const getResumeById = async (req, res) => {
   try {
     const id = parseInt(req.params.id);
     if (!id) return res.status(404).json({ message: "Invalid ID" });
-    const resume = await sql`
-      SELECT * FROM resumes WHERE id=${id}
-    `;
-    if (!resume || resume.length == 0) return res.status(404).json({ message: "Resume not found" });
-    res.status(200).json(resume[0]);
+    const resume = await getResume(id);
+    if (!resume) return res.status(404).json({ message: "Resume not found" });
+    res.status(200).json(resume);
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: "Internal server error" });
@@ -137,31 +136,19 @@ export const uploadResume = async (req, res) => {
     const file = req.file;
     if (!file) return res.status(400).json({ message: "No file uploaded" }); // if no file is uploaded
 
-    const resume = await sql`
-      INSERT INTO resumes (
-        auth_user_id,
-        original_filename,
-        stored_filename,
-        file_type,
-        job_description,
-        status
-      )
-      VALUES (
-        ${String(user_id)},
-        ${file.originalname},
-        ${file.filename},
-        ${file.mimetype},
-        ${job_description},
-        'uploaded'
-      )
-      RETURNING *
-    `;
-    if (!resume || resume.length === 0) return res.status(400).json({ message: "Resume not uploaded. Record not created" });
+    const resume = await createResumeRecord({
+      auth_user_id: user_id,
+      original_filename: file.originalname,
+      stored_filename: file.filename,
+      file_type: file.mimetype,
+      job_description,
+    });
+    if (!resume) return res.status(400).json({ message: "Resume not uploaded. Record not created" });
     console.log(resume);
-    res.status(201).json(resume[0]);
+    res.status(201).json(resume);
   } catch (err) {
     console.error(err);
-    res.status(500).json({ message: "Error Uploading file" });
+    res.status(500).json({ message: err.message || "Error Uploading file" });
   }
 };
 
@@ -169,11 +156,8 @@ export const uploadResume = async (req, res) => {
 export const cleanResume = async (req, res) => {
   try {
     const id = parseInt(req.params.id);
-    const rows = await sql`
-      SELECT * FROM resumes WHERE id=${id}
-    `;
-    if (!rows || rows.length === 0) return res.status(404).json({ message: "Resume not found" });
-    const resume = rows[0];
+    const resume = await getResume(id);
+    if (!resume) return res.status(404).json({ message: "Resume not found" });
 
     const filePath = path.join(UPLOADS_FOLDER, resume.stored_filename);
     if (!fs.existsSync(filePath)) return res.status(400).json({ message: "Resume file not found" });
@@ -198,18 +182,14 @@ export const cleanResume = async (req, res) => {
     const cleanPdfName = `${resume.id}-cleaned.pdf`;
     const cleanedPdfPath = exportToPDF(cleanedText, cleanPdfName);
 
-    const updated = await sql`
-      UPDATE resumes
-      SET
-        raw_text = ${rawText},
-        cleaned_text = ${cleanedText},
-        cleaned_pdf = ${cleanedPdfPath},
-        status = 'completed'
-      WHERE id = ${id}
-      RETURNING *
-    `;
+    const updated = await updateResumeRecord(id, {
+      raw_text: rawText,
+      cleaned_text: cleanedText,
+      cleaned_pdf: cleanedPdfPath,
+      status: "completed",
+    });
 
-    res.status(200).json(updated[0]);
+    res.status(200).json(updated);
   } catch (err) {
     console.error("CLEAN ERROR:", err);
     res.status(500).json({ message: err.message || "Internal server error" });
@@ -220,20 +200,15 @@ export const cleanResume = async (req, res) => {
 export const deleteResume = async (req, res) => {
   try {
     const id = parseInt(req.params.id);
-    const rows = await sql`
-      SELECT * FROM resumes WHERE id = ${id}
-    `;
-    if (!rows || rows.length === 0) return res.status(404).json({ message: "Resume not found" });
-    const resume = rows[0];
+    const resume = await getResume(id);
+    if (!resume) return res.status(404).json({ message: "Resume not found" });
 
     if (resume.stored_filename && fs.existsSync(path.join(UPLOADS_FOLDER, resume.stored_filename))) {
       fs.unlinkSync(path.join(UPLOADS_FOLDER, resume.stored_filename));
     }
     if (resume.cleaned_pdf && fs.existsSync(resume.cleaned_pdf)) fs.unlinkSync(resume.cleaned_pdf);
 
-    await sql`
-      DELETE FROM resumes WHERE id = ${id}
-    `;
+    await deleteResumeRecord(id);
     res.status(200).json({ message: "Resume deleted successfully" });
   } catch (err) {
     console.error(err);
@@ -245,11 +220,8 @@ export const deleteResume = async (req, res) => {
 export const exportCleanedPDF = async (req, res) => {
   try {
     const id = parseInt(req.params.id);
-    const rows = await sql`
-      SELECT * FROM resumes WHERE id = ${id}
-    `;
-    if (!rows || rows.length === 0) return res.status(404).json({ message: "Resume not found" });
-    const resume = rows[0];
+    const resume = await getResume(id);
+    if (!resume) return res.status(404).json({ message: "Resume not found" });
 
     if (!resume.cleaned_pdf || !fs.existsSync(resume.cleaned_pdf))
       return res.status(400).json({ message: "PDF not found" });
