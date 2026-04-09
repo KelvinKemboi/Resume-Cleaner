@@ -2,6 +2,10 @@ import ratelimit from "../config/upstash.js";
 
 const rateLimiter = async (req, res, next) => {
   try {
+    if (!ratelimit) {
+      return next();
+    }
+
     // Identify the user
     const identifier = req.user?.uid || req.ip;
     // limit in Upstash

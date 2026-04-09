@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { cleanResume, deleteResume } from "../lib/api";
 
-const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5000";
+const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5000/api";
 
 type Resume = {
   id: number;
@@ -50,7 +50,7 @@ export default function ResumeCard({ resume, onUpdated }: Props) {
   };
 
   const handleExportPDF = () => {
-    if (!resume.cleaned_text) return;
+    if (!cleanedText) return;
     window.open(`${BACKEND_URL}/resumes/${resume.id}/export`, "_blank");
   };
 
