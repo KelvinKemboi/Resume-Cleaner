@@ -1,10 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { cleanResume, deleteResume } from "../lib/api";
+import { cleanResume, deleteResume } from "../lib/api"; //from api hook
 
 const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5000/api";
 
+//resume 
 type Resume = {
   id: number;
   original_filename: string;
@@ -18,11 +19,13 @@ type Props = {
 };
 
 export default function ResumeCard({ resume, onUpdated }: Props) {
+  //use states
   const [loadingClean, setLoadingClean] = useState(false);
   const [loadingDelete, setLoadingDelete] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [cleanedText, setCleanedText] = useState(resume.cleaned_text || null);
 
+  //clean resume sends to backend api
   const handleClean = async () => {
     setLoadingClean(true);
     try {
@@ -36,6 +39,7 @@ export default function ResumeCard({ resume, onUpdated }: Props) {
     }
   };
 
+  //delete reusme deletes from current queue
   const handleDelete = async () => {
     if (!confirm("Delete this resume?")) return;
     setLoadingDelete(true);
@@ -49,6 +53,7 @@ export default function ResumeCard({ resume, onUpdated }: Props) {
     }
   };
 
+  //export text to downloadable pdf
   const handleExportPDF = () => {
     if (!cleanedText) return;
     window.open(`${BACKEND_URL}/resumes/${resume.id}/export`, "_blank");

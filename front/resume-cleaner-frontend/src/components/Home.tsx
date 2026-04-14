@@ -6,13 +6,14 @@ import ResumeCard from "./ResumeCard";
 import { getResumes } from "../lib/api";
 
 export default function Home() {
-  const [resumes, setResumes] = useState<any[]>([]);
+  const [resumes, setResumes] = useState<any[]>([]); //usestate for resumes
 
+  //helper function to fetch resumes
   const fetchResumes = async () => {
     const data = await getResumes();
     setResumes(data);
   };
-
+  //fetch resumes from backend
   useEffect(() => {
     fetchResumes();
   }, []);
