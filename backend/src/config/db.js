@@ -1,30 +1,46 @@
-import { neon } from "@neondatabase/serverless";
+import { neon } from "@neondatabase/serverless"; //neon db connection
 import dotenv from "dotenv";
-import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 
+//file paths variables
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+//db configuration
 dotenv.config({ path: path.resolve(__dirname, "../../.env") });
 
-const databaseUrl = process.env.DATABASE_URL?.trim().replace(/^['"]|['"]$/g, "");
+//helper function: clean and normalize to readable database url
+function normalizeDatabaseUrl(value) {
+  if (!value) return "";
+
+  const trimmed = value.trim();
+  const psqlMatch = trimmed.match(/^psql\s+['"](.+)['"]$/is);
+  const extracted = psqlMatch ? psqlMatch[1] : trimmed;
+
+  return extracted.replace(/^['"]|['"]$/g, "").replace(/\s+/g, "");
+}
+
+//data base url from neon's psql link
+const databaseUrl = normalizeDatabaseUrl(process.env.DATABASE_URL);
 const sql = databaseUrl ? neon(databaseUrl) : null;
 let databaseAvailable = false;
 export default sql;
+
+//helper function if database is made and working
 export function isDatabaseAvailable() {
   return databaseAvailable;
 }
 
+//initial database columns & sections
 export async function initDB() {
   if (!sql) {
-    console.warn("DATABASE_URL is missing. Falling back to local file storage.");
-    databaseAvailable = false;
-    return;
+    throw new Error("DATABASE_URL is missing or invalid in backend/.env");
   }
 
   try {
+    await sql`SELECT 1`;
+    //create initial/first sql tables if they dont exists
     await sql`
       CREATE TABLE IF NOT EXISTS resumes (
         id SERIAL PRIMARY KEY,
@@ -41,7 +57,7 @@ export async function initDB() {
       )
     `;
 
-    // Keep older databases in sync with the fields the current app uses.
+    // make updates without changing struture- Keep older databases in sync with the fields the current app uses
     await sql`
       ALTER TABLE resumes
       ADD COLUMN IF NOT EXISTS auth_user_id VARCHAR(255)
@@ -92,8 +108,7 @@ export async function initDB() {
 
     databaseAvailable = true;
   } catch (error) {
-    console.error("Error initialising database:", error);
-    console.warn("Falling back to local file storage.");
     databaseAvailable = false;
+    throw new Error(`Error initialising Neon database: ${error.message}`);
   }
 }

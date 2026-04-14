@@ -2,6 +2,7 @@ import { Redis } from "@upstash/redis";
 import { Ratelimit } from "@upstash/ratelimit";
 import "dotenv/config";
 
+//redis tokens gotten from upstash
 const redisUrl = process.env.UPSTASH_REDIS_REST_URL;
 const redisToken = process.env.UPSTASH_REDIS_REST_TOKEN;
 
@@ -11,6 +12,7 @@ const hasValidRedisConfig =
   typeof redisToken === "string" &&
   redisToken.length > 0;
 
+  //rate limitting
 const ratelimit = hasValidRedisConfig
   ? new Ratelimit({
       redis: new Redis({

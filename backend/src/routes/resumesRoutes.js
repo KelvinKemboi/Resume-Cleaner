@@ -7,7 +7,7 @@ import {
   cleanResume,
   deleteResume,
   exportCleanedPDF, 
-} from "../controllers/controller.js";
+} from "../controllers/controller.js"; //imports
 
 const router = express.Router();
 

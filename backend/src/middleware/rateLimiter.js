@@ -8,7 +8,7 @@ const rateLimiter = async (req, res, next) => {
 
     // Identify the user
     const identifier = req.user?.uid || req.ip;
-    // limit in Upstash
+    // user limit in Upstash
     const { success, pending, limit, reset } = await ratelimit.limit(identifier);
 
     if (!success) {
