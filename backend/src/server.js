@@ -8,6 +8,8 @@ import resumesRoutes from "./routes/resumesRoutes.js";
 dotenv.config();
 
 const app = express();
+
+//possible frontend routes
 const allowedOrigins = [
   "http://localhost:3000",
   "http://127.0.0.1:3000",

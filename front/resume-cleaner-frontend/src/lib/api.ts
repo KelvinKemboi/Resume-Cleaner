@@ -17,6 +17,7 @@ export type Resume = {
 const api = axios.create({
   baseURL: BASE_URL,
   withCredentials: false,
+  timeout: 30000,
   headers: {
     Accept: "application/json",
   },
@@ -72,15 +73,50 @@ export const exportResume = (id: number) => {
   window.open(url, "_blank");
 };
 
-// Convert Axios-specific failures into a plain Error with the backend message.
+function buildRequestLabel(axiosErr: AxiosError) {
+  const method = axiosErr.config?.method?.toUpperCase() ?? "REQUEST";
+  const url = axiosErr.config?.url ?? "unknown-endpoint";
+  return `${method} ${url}`;
+}
+
+function extractBackendMessage(data: unknown) {
+  if (typeof data === "string" && data.trim()) return data.trim();
+
+  if (data && typeof data === "object") {
+    const maybeMessage = (data as { message?: unknown }).message;
+    if (typeof maybeMessage === "string" && maybeMessage.trim()) {
+      return maybeMessage.trim();
+    }
+  }
+
+  return null;
+}
+
+// Convert Axios failures into detailed errors that are easier to debug in the UI.
 function handleAxiosError(err: unknown): never {
   if (axios.isAxiosError(err)) {
-    const axiosErr = err as AxiosError<{ message?: string }>;
-    const msg =
-      axiosErr.response?.data?.message ||
-      axiosErr.message ||
-      "Unknown server error";
-    throw new Error(msg);
+    const axiosErr = err as AxiosError;
+    const requestLabel = buildRequestLabel(axiosErr);
+    const backendMessage = extractBackendMessage(axiosErr.response?.data);
+
+    if (axiosErr.response) {
+      const status = axiosErr.response.status;
+      const statusText = axiosErr.response.statusText || "Request failed";
+      const details = backendMessage ?? axiosErr.message;
+      throw new Error(`${requestLabel} failed with ${status} ${statusText}: ${details}`);
+    }
+
+    if (axiosErr.code === "ECONNABORTED") {
+      throw new Error(`${requestLabel} timed out after 30 seconds.`);
+    }
+
+    if (axiosErr.request) {
+      throw new Error(
+        `${requestLabel} did not receive a response. This usually means the backend is down, the API URL is wrong, or the request was blocked by CORS/network rules.`
+      );
+    }
+
+    throw new Error(`${requestLabel} could not be created: ${axiosErr.message}`);
   }
 
   throw new Error("Unknown error occurred");
