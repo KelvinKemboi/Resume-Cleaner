@@ -1,7 +1,7 @@
 import axios, { AxiosError } from "axios";
 
 // Use the deployed backend URL when provided, otherwise fall back to local dev.
-const BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5000/api";
+export const BASE_URL = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5000/api").replace(/\/+$/, "");
 
 // Shape of a resume record returned by the backend API.
 export type Resume = {

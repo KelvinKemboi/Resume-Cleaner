@@ -3,15 +3,18 @@
 import { useState } from "react";
 import { uploadResume } from "../lib/api";
 
+// Parent passes this callback so the resume list can refresh after a successful upload.
 type UploadFormProps = { onUploaded: () => void };
 
 export default function UploadForm({ onUploaded }: UploadFormProps) {
+  // usestates- Track selected files, optional job texts, and UI feedback state.
   const [file, setFile] = useState<File | null>(null);
   const [job, setJob] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
+  // Validate input, build form payload, and send upload request
   const submit = async () => {
     if (!file) {
       setError("Please select a file.");
@@ -34,12 +37,13 @@ export default function UploadForm({ onUploaded }: UploadFormProps) {
       const fd = new FormData();
       fd.append("resume", file);
       
-      // optional job field
+      // Only send job description when the user provides one
       if (job.trim().length > 0) {
         fd.append("job_description", job);
       }
       await uploadResume(fd);
 
+      // Reset the form and reload data
       setFile(null);
       setJob("");
       setSuccess("Resume uploaded successfully!");

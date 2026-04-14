@@ -1,9 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { cleanResume, deleteResume } from "../lib/api"; //from api hook
-
-const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5000/api";
+import { BASE_URL, cleanResume, deleteResume } from "../lib/api"; //from api hook
 
 //resume 
 type Resume = {
@@ -56,7 +54,7 @@ export default function ResumeCard({ resume, onUpdated }: Props) {
   //export text to downloadable pdf
   const handleExportPDF = () => {
     if (!cleanedText) return;
-    window.open(`${BACKEND_URL}/resumes/${resume.id}/export`, "_blank");
+    window.open(`${BASE_URL}/resumes/${resume.id}/export`, "_blank");
   };
 
   return (
