@@ -7,7 +7,7 @@ AI Resume Cleaner is a full-stack app for uploading resumes, cleaning them into 
 - Frontend: Next.js, React, TypeScript, Tailwind CSS
 - Backend: Express, Node.js, Multer, Mammoth, PDFKit
 - Database: Neon Postgres
-- Optional rate limiting: Upstash Redis
+- Rate limiting: Upstash Redis
 - AI: OpenAI API
 
 ## Project Structure
