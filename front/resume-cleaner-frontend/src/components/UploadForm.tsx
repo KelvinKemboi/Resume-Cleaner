@@ -1,16 +1,17 @@
 "use client";
 
 import { useState } from "react";
-import { uploadResume } from "../lib/api";
+import { uploadResume, type Resume } from "../lib/api";
 
 // Parent passes this callback so the resume list can refresh after a successful upload.
-type UploadFormProps = { onUploaded: () => void };
+type UploadFormProps = { onUploaded: (resume: Resume) => void };
 
 export default function UploadForm({ onUploaded }: UploadFormProps) {
   // usestates- Track selected files, optional job texts, and UI feedback state.
   const [file, setFile] = useState<File | null>(null);
   const [job, setJob] = useState("");
   const [loading, setLoading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
@@ -32,6 +33,7 @@ export default function UploadForm({ onUploaded }: UploadFormProps) {
     setError(null);
     setSuccess(null);
     setLoading(true);
+    setUploadProgress(0);
 
     try {
       const fd = new FormData();
@@ -41,13 +43,13 @@ export default function UploadForm({ onUploaded }: UploadFormProps) {
       if (job.trim().length > 0) {
         fd.append("job_description", job);
       }
-      await uploadResume(fd);
+      const uploaded = await uploadResume(fd, setUploadProgress);
 
-      // Reset the form and reload data
+      // Reset the form and add the new record immediately.
       setFile(null);
       setJob("");
       setSuccess("Resume uploaded successfully!");
-      onUploaded();
+      onUploaded(uploaded);
     } catch (err) {
       console.error(err);
       setError(
@@ -55,6 +57,7 @@ export default function UploadForm({ onUploaded }: UploadFormProps) {
       );
     } finally {
       setLoading(false);
+      setUploadProgress(0);
     }
   };
 
@@ -86,6 +89,17 @@ export default function UploadForm({ onUploaded }: UploadFormProps) {
 
       {error && <p className="text-red-600 font-medium">{error}</p>}
       {success && <p className="text-green-600 font-medium">{success}</p>}
+      {loading && uploadProgress > 0 && (
+        <div className="space-y-1" aria-live="polite">
+          <div className="h-2 w-full overflow-hidden rounded bg-gray-200">
+            <div
+              className="h-full bg-blue-600 transition-all"
+              style={{ width: `${uploadProgress}%` }}
+            />
+          </div>
+          <p className="text-xs text-gray-500">{uploadProgress}% uploaded</p>
+        </div>
+      )}
 
       <button
         onClick={submit}

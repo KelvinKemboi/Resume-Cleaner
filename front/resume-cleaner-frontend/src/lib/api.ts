@@ -34,11 +34,19 @@ export const getResumes = async (): Promise<Resume[]> => {
 };
 
 // Upload a resume file using multipart form data
-export const uploadResume = async (fd: FormData): Promise<Resume> => {
+export const uploadResume = async (
+  fd: FormData,
+  onProgress?: (progress: number) => void
+): Promise<Resume> => {
   try {
     const res = await api.post("/resumes", fd, {
+      timeout: 120000,
       headers: {
         "Content-Type": "multipart/form-data",
+      },
+      onUploadProgress: (event) => {
+        if (!event.total || !onProgress) return;
+        onProgress(Math.round((event.loaded * 100) / event.total));
       },
     });
     return res.data as Resume;

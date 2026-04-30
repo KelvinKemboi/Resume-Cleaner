@@ -3,10 +3,10 @@
 import { useEffect, useState } from "react";
 import UploadForm from "./UploadForm";
 import ResumeCard from "./ResumeCard";
-import { getResumes } from "../lib/api";
+import { getResumes, type Resume } from "../lib/api";
 
 export default function Home() {
-  const [resumes, setResumes] = useState<any[]>([]); //usestate for resumes
+  const [resumes, setResumes] = useState<Resume[]>([]); //usestate for resumes
 
   //helper function to fetch resumes
   const fetchResumes = async () => {
@@ -18,10 +18,17 @@ export default function Home() {
     fetchResumes();
   }, []);
 
+  const addUploadedResume = (resume: Resume) => {
+    setResumes((current) => [
+      resume,
+      ...current.filter((existing) => existing.id !== resume.id),
+    ]);
+  };
+
   return (
     <div className="max-w-3xl mx-auto p-4">
       <h1 className="text-2xl font-bold mb-4">AI Resume Cleaner</h1>
-      <UploadForm onUploaded={fetchResumes} />
+      <UploadForm onUploaded={addUploadedResume} />
       <div className="mt-4">
         {resumes.map((r) => (
           <ResumeCard key={r.id} resume={r} onUpdated={fetchResumes} />

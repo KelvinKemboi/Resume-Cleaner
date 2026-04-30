@@ -1,5 +1,6 @@
 import fs from "fs"; //creating/ working with directories
 import path from "path"; //working with path directories
+import crypto from "crypto";
 import multer from "multer"; //handling file-uploads
 import mammoth from "mammoth";
 import OpenAI from "openai"; //AI-API doing the cleaning
@@ -22,6 +23,47 @@ const CLEANED_FOLDER = path.join(process.cwd(), "cleaned"); //variable for clean
 if (!fs.existsSync(UPLOADS_FOLDER)) fs.mkdirSync(UPLOADS_FOLDER, { recursive: true }); //create the folder if it does not exist in local dir
 if (!fs.existsSync(CLEANED_FOLDER)) fs.mkdirSync(CLEANED_FOLDER, { recursive: true }); //create the folder if it does not exist in local dir
 
+const ACCEPTED_MIME_BY_EXTENSION = {
+  ".pdf": ["application/pdf"],
+  ".doc": ["application/msword"],
+  ".docx": ["application/vnd.openxmlformats-officedocument.wordprocessingml.document"],
+};
+
+function safeOriginalName(originalName) {
+  return path.basename(originalName || "resume").replace(/[^a-zA-Z0-9._ -]/g, "_");
+}
+
+function getSupportedExtension(originalName) {
+  return path.extname(originalName || "").toLowerCase();
+}
+
+async function deleteFileIfExists(filePath) {
+  if (!filePath) return;
+
+  try {
+    await fs.promises.unlink(filePath);
+  } catch (err) {
+    if (err.code !== "ENOENT") throw err;
+  }
+}
+
+async function hasExpectedFileSignature(filePath, extension) {
+  const handle = await fs.promises.open(filePath, "r");
+
+  try {
+    const { buffer, bytesRead } = await handle.read(Buffer.alloc(8), 0, 8, 0);
+    const header = buffer.subarray(0, bytesRead);
+
+    if (extension === ".pdf") return header.subarray(0, 5).toString() === "%PDF-";
+    if (extension === ".docx") return header.subarray(0, 4).equals(Buffer.from([0x50, 0x4b, 0x03, 0x04]));
+    if (extension === ".doc") return header.equals(Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]));
+
+    return false;
+  } finally {
+    await handle.close();
+  }
+}
+
 // Multer setup - handles file uploads 
 export const upload = multer({
   storage: multer.diskStorage({
@@ -29,21 +71,40 @@ export const upload = multer({
       cb(null, UPLOADS_FOLDER);
     },
     filename: (req, file, cb) => {
-      const uniqueName = Date.now() + "-" + file.originalname.replace(/[^a-zA-Z0-9.-]/g, "_"); // make an acceptable file name
+      const extension = getSupportedExtension(file.originalname);
+      const uniqueName = `${Date.now()}-${crypto.randomUUID()}${extension}`;
       cb(null, uniqueName); //accept file name
     },
   }),
-  limits: { fileSize: 10 * 1024 * 1024 }, //max file size
+  limits: {
+    fileSize: 10 * 1024 * 1024,
+    files: 1,
+    fields: 2,
+    fieldSize: 20 * 1024,
+  }, //max file size
   fileFilter: (req, file, cb) => { //only for pdfs, word docx/doc and images
-    const isSupported = //supported docs- pdfs, word docs, xml files
-      file.mimetype === "application/pdf" ||
-      file.mimetype === "application/msword" ||
-      file.mimetype === "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+    const extension = getSupportedExtension(file.originalname);
+    const acceptedMimeTypes = ACCEPTED_MIME_BY_EXTENSION[extension];
+    const isSupported = acceptedMimeTypes?.includes(file.mimetype);
 
     if (isSupported) cb(null, true);
     else cb(new Error("Only PDF or Word documents are allowed."));
   },
 });
+
+export function handleUploadErrors(req, res, next) {
+  upload.single("resume")(req, res, (err) => {
+    if (!err) return next();
+
+    const status = err instanceof multer.MulterError ? 400 : 415;
+    const message =
+      err.code === "LIMIT_FILE_SIZE"
+        ? "File is too large. Maximum size is 10 MB."
+        : err.message || "Upload failed.";
+
+    return res.status(status).json({ message });
+  });
+}
 
 // Helper to analyse/parse PDF uploaded in uploads folder
 async function parsePDF(filePath) {
@@ -131,22 +192,33 @@ export const getResumeById = async (req, res) => {
 
 // POST upload resume
 export const uploadResume = async (req, res) => {
+  const file = req.file;
+
   try {
     const { user_id = "demo-user", job_description = "" } = req.body; //dummy id- will implement user auth later
-    const file = req.file;
     if (!file) return res.status(400).json({ message: "No file uploaded" }); // if no file is uploaded
+    const extension = getSupportedExtension(file.originalname);
+
+    if (!(await hasExpectedFileSignature(file.path, extension))) {
+      await deleteFileIfExists(file.path);
+      return res.status(415).json({ message: "Uploaded file content does not match the expected document type." });
+    }
 
     const resume = await createResumeRecord({ //to be recorded on the data base
       auth_user_id: user_id,
-      original_filename: file.originalname,
+      original_filename: safeOriginalName(file.originalname),
       stored_filename: file.filename,
       file_type: file.mimetype,
       job_description,
     });
-    if (!resume) return res.status(400).json({ message: "Resume not uploaded. Record not created" });
+    if (!resume) {
+      await deleteFileIfExists(file.path);
+      return res.status(400).json({ message: "Resume not uploaded. Record not created" });
+    }
     console.log(resume);
     res.status(201).json(resume);
   } catch (err) {
+    await deleteFileIfExists(file?.path);
     console.error(err);
     res.status(500).json({ message: err.message || "Error Uploading file" });
   }

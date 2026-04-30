@@ -1,8 +1,8 @@
 import express from "express";
 import {
-  upload,
   getResumesByUser,
   getResumeById,
+  handleUploadErrors,
   uploadResume,
   cleanResume,
   deleteResume,
@@ -18,7 +18,7 @@ router.get("/", getResumesByUser);
 router.get("/:id", getResumeById);
 
 // POST upload resume
-router.post("/", upload.single("resume"), uploadResume);
+router.post("/", handleUploadErrors, uploadResume);
 
 // POST clean resume
 router.post("/:id/clean", cleanResume);
