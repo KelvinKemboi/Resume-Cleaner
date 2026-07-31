@@ -14,9 +14,11 @@ export type Resume = {
 };
 
 // Shared Axios client so every request uses the same base URL and headers.
+// withCredentials is required: resume ownership is tied to a signed session
+// cookie the backend sets, not anything the client sends.
 const api = axios.create({
   baseURL: BASE_URL,
-  withCredentials: false,
+  withCredentials: true,
   timeout: 30000,
   headers: {
     Accept: "application/json",
@@ -115,7 +117,10 @@ function handleAxiosError(err: unknown): never {
     }
 
     if (axiosErr.code === "ECONNABORTED") {
-      throw new Error(`${requestLabel} timed out after 30 seconds.`);
+      throw new Error(
+        `${requestLabel} timed out. If the backend is hosted on a free tier (e.g. Render), it may be waking up from ` +
+          `being idle - this can take up to a minute on the first request. Please try again.`
+      );
     }
 
     if (axiosErr.request) {

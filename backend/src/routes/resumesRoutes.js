@@ -6,8 +6,9 @@ import {
   uploadResume,
   cleanResume,
   deleteResume,
-  exportCleanedPDF, 
+  exportCleanedPDF,
 } from "../controllers/controller.js"; //imports
+import strictLimiter from "../middleware/strictLimiter.js";
 
 const router = express.Router();
 
@@ -18,10 +19,10 @@ router.get("/", getResumesByUser);
 router.get("/:id", getResumeById);
 
 // POST upload resume
-router.post("/", handleUploadErrors, uploadResume);
+router.post("/", strictLimiter, handleUploadErrors, uploadResume);
 
 // POST clean resume
-router.post("/:id/clean", cleanResume);
+router.post("/:id/clean", strictLimiter, cleanResume);
 
 // GET cleaned PDF
 router.get("/:id/export", exportCleanedPDF);

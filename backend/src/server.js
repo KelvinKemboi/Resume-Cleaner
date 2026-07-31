@@ -1,13 +1,21 @@
 import express from "express";
 import dotenv from "dotenv";
+import cookieParser from "cookie-parser";
+import helmet from "helmet";
 import { initDB } from "./config/db.js";
 import cors from "cors";
 import rateLimiter from "./middleware/rateLimiter.js";
+import session, { COOKIE_SECRET } from "./middleware/session.js";
 import resumesRoutes from "./routes/resumesRoutes.js";
 
 dotenv.config();
 
 const app = express();
+
+// Trust the first hop proxy (Render, etc.) so req.ip and secure cookies reflect
+// the real client instead of the proxy - required for rate limiting to key
+// correctly and for the session cookie's "secure" flag to behave in production.
+app.set("trust proxy", 1);
 
 //possible frontend routes
 const allowedOrigins = [
@@ -18,7 +26,10 @@ const allowedOrigins = [
   .filter(Boolean)
   .map((origin) => origin.trim());
 
-app.use(express.json());
+app.use(helmet());
+app.use(express.json({ limit: "100kb" }));
+app.use(cookieParser(COOKIE_SECRET));
+app.use(session);
 
 // rate limiter
 app.use(rateLimiter);

@@ -42,20 +42,24 @@ Resume Cleaner/
 
 ## Environment Variables
 
-Create `backend/.env` with:
+Copy `backend/.env.example` to `backend/.env` and fill in:
 
 ```env
 OPENAI_API_KEY=your_openai_key
 PORT=5000
 DATABASE_URL=your_neon_connection_string
+COOKIE_SECRET=a_long_random_string
 UPSTASH_REDIS_REST_URL=your_upstash_url
 UPSTASH_REDIS_REST_TOKEN=your_upstash_token
+FRONTEND_URL=https://your-deployed-frontend.example.com
 NODE_ENV=development
 ```
 
 Notes:
 
-- `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN` are optional. If they are missing, rate limiting is skipped.
+- `COOKIE_SECRET` signs the anonymous session cookie that owns each resume (see Security below). Set it in every persistent environment - without it, a random secret is generated per process restart and every existing session is invalidated on each deploy/restart.
+- `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN` are optional. If they are missing, the app falls back to a local in-memory rate limiter instead of skipping rate limiting entirely.
+- `NODE_ENV=production` is required for the session cookie to be sent correctly when the frontend and backend are on different domains (Secure + SameSite=None). Production deployments must be served over HTTPS.
 - Do not commit real secrets.
 
 For the frontend, set:
@@ -106,20 +110,23 @@ Frontend runs on `http://localhost:3000`.
 
 Base URL: `http://localhost:5000/api/resumes`
 
-- `GET /` - List resumes
-- `GET /:id` - Get one resume
+All routes are scoped to the caller's anonymous session cookie (see Security below) - `GET /` always returns only the resumes owned by the current browser session, and `GET /:id`, `POST /:id/clean`, `GET /:id/export`, `DELETE /:id` return 404 for any resume that session doesn't own, even if the ID exists.
+
+- `GET /` - List resumes owned by the current session
+- `GET /:id` - Get one resume (must be owned by the current session)
 - `POST /` - Upload a resume using multipart form data with field name `resume`
 - `POST /:id/clean` - Clean a resume with OpenAI
 - `GET /:id/export` - Download the cleaned PDF
 - `DELETE /:id` - Delete a resume
+
+Requests must include credentials (cookies) - browser clients need `fetch`/`axios` configured with `credentials: "include"` / `withCredentials: true`.
 
 ## Upload Request Shape
 
 Use `multipart/form-data` with:
 
 - `resume`: file
-- `user_id`: optional string
-- `job_description`: optional string
+- `job_description`: optional string (used to tailor the AI cleaning pass toward a target role)
 
 ## Database
 
@@ -147,6 +154,10 @@ Main fields include:
 
 ## Security
 
+- **Resume ownership**: on first request, the backend sets a signed, `httpOnly`, `SameSite` session cookie (`rc_sid`) identifying "this browser." That cookie - never anything the client sends - determines which resumes a request can see, clean, export, or delete. There is no login; it's an anonymous per-browser identity, not a real account, so it doesn't follow you across browsers/devices and clearing cookies starts a fresh, empty session.
+- **Upload validation**: files are restricted by extension + MIME type, and the actual file bytes are checked against the expected magic number (`%PDF-`, the DOCX zip header, or the legacy DOC header) after upload, before the file is trusted - a renamed `.exe` won't pass even if its extension and MIME type are spoofed. Max size 10 MB, one file per request.
+- **Rate limiting**: general API traffic is limited (via Upstash if configured, otherwise an in-memory fallback so it's never fully open); upload and clean specifically have a tighter, always-on limit since they're the expensive/abusable operations.
+- **Headers**: `helmet` sets standard hardening headers; CORS is restricted to an explicit origin allowlist (`localhost:3000`/`127.0.0.1:3000` plus `FRONTEND_URL`), not a wildcard.
 - Rotate any API keys or database credentials that were exposed in development.
 - Keep `.env` files out of version control.
 
