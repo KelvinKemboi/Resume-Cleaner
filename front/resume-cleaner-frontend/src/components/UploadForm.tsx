@@ -5,7 +5,7 @@ import { FileText, UploadCloud, X } from "lucide-react";
 import { uploadResume, type Resume } from "../lib/api";
 import { useToast } from "./ToastProvider";
 
-// Parent passes this callback so the resume list can update after a successful upload.
+// Parent passes this callback so the resume list can update after a successful upload
 type UploadFormProps = { onUploaded: (resume: Resume) => void };
 
 const ALLOWED_EXTENSIONS = [".pdf", ".doc", ".docx"];

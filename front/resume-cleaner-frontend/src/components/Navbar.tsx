@@ -1,4 +1,4 @@
-import { FileCheck2, ShieldCheck } from "lucide-react";
+import {FileCheck2, ShieldCheck} from "lucide-react";
 
 export default function Navbar() {
   return (

@@ -12,9 +12,7 @@ dotenv.config();
 
 const app = express();
 
-// Trust the first hop proxy (Render, etc.) so req.ip and secure cookies reflect
-// the real client instead of the proxy - required for rate limiting to key
-// correctly and for the session cookie's "secure" flag to behave in production.
+// required for rate limiting to key correctly and for the session cookie's "secure" flag to work in production
 app.set("trust proxy", 1);
 
 //possible frontend routes

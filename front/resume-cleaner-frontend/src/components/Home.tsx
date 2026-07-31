@@ -26,9 +26,6 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    // Deliberate fetch-on-mount, not a derived-state effect - the rule's
-    // cascading-render concern doesn't apply to a one-time initial load.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchResumes();
   }, [fetchResumes]);
 

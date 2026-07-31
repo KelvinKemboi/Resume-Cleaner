@@ -1,9 +1,9 @@
 import axios, { AxiosError } from "axios";
 
-// Use the deployed backend URL when provided, otherwise fall back to local dev.
+// Use the deployed backend URL when provided, otherwise fall back to local dev
 export const BASE_URL = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5000/api").replace(/\/+$/, "");
 
-// Shape of a resume record returned by the backend API.
+// Shape of a resume record returned by the backend API
 export type Resume = {
   id: number;
   original_filename: string;
@@ -13,9 +13,7 @@ export type Resume = {
   cleaned_pdf: string | null;
 };
 
-// Shared Axios client so every request uses the same base URL and headers.
-// withCredentials is required: resume ownership is tied to a signed session
-// cookie the backend sets, not anything the client sends.
+// Shared Axios client so every request uses the same base URL and header
 const api = axios.create({
   baseURL: BASE_URL,
   withCredentials: true,
@@ -102,7 +100,7 @@ function extractBackendMessage(data: unknown) {
   return null;
 }
 
-// Convert Axios failures into detailed errors that are easier to debug in the UI.
+// Convert Axios failures into detailed errors that are easier to debug in the UI
 function handleAxiosError(err: unknown): never {
   if (axios.isAxiosError(err)) {
     const axiosErr = err as AxiosError;
